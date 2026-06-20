@@ -56,6 +56,14 @@
             </div>
           </div>
           <button @click="runTest" class="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 rounded text-sm">执行T检验</button>
+          <div v-if="store.testErrors.length > 0" class="mt-3 space-y-2">
+            <div v-for="(err, idx) in store.testErrors" :key="idx" class="bg-red-900/30 border border-red-700 rounded p-2 text-sm">
+              <div class="text-red-400 font-bold">{{ err.message }}</div>
+              <div v-if="err.invalidItems.length > 0" class="text-red-300 text-xs mt-1 font-mono">
+                无效项: {{ err.invalidItems.join(', ') }}
+              </div>
+            </div>
+          </div>
           <div v-if="store.testResult" class="mt-3 grid grid-cols-4 gap-3 text-sm">
             <div class="bg-slate-900 rounded p-2 text-center"><div class="text-xs text-slate-500 mb-1">统计量 t</div><div class="text-cyan-400 font-bold font-mono">{{ store.testResult.statistic }}</div></div>
             <div class="bg-slate-900 rounded p-2 text-center"><div class="text-xs text-slate-500 mb-1">p 值</div><div class="font-bold font-mono" :class="store.testResult.significant ? 'text-red-400' : 'text-green-400'">{{ store.testResult.pValue }}</div></div>
@@ -71,7 +79,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
 import * as echarts from 'echarts'
-import { useMCStore, SCENARIOS } from './store/mc'
+import { useMCStore, SCENARIOS, validateAndParseSamples } from './store/mc'
 
 const store = useMCStore()
 const convergenceRef = ref<HTMLDivElement | null>(null)
@@ -110,9 +118,11 @@ function updateCharts() {
 }
 
 function runTest() {
-  const g1 = group1Input.value.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n))
-  const g2 = group2Input.value.split(',').map(s => parseFloat(s.trim())).filter(n => !isNaN(n))
-  if (g1.length > 1 && g2.length > 1) store.runTest(g1, g2)
+  const validation = validateAndParseSamples(group1Input.value, group2Input.value)
+  store.setTestErrors(validation.errors)
+  if (validation.valid) {
+    store.runTest(validation.group1, validation.group2)
+  }
 }
 
 onMounted(() => { initCharts(); store.runSimulation() })

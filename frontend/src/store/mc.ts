@@ -28,6 +28,20 @@ export interface HypTestResult {
   df?: number
 }
 
+export interface ValidationError {
+  group: 'A' | 'B'
+  type: 'empty' | 'format' | 'count' | 'range'
+  message: string
+  invalidItems: string[]
+}
+
+export interface ValidationResult {
+  valid: boolean
+  group1: number[]
+  group2: number[]
+  errors: ValidationError[]
+}
+
 function normalRandom(): number {
   let u = 0, v = 0
   while (u === 0) u = Math.random()
@@ -106,11 +120,61 @@ export const SCENARIOS: MCScenario[] = [
   { id: 'gambler', name: '赌徒破产', description: '不利赌局下资金耗尽概率估算', params: { p: 0.45, bankroll: 50, goal: 100 }, category: '概率' }
 ]
 
+export function validateAndParseSamples(input1: string, input2: string): ValidationResult {
+  const errors: ValidationError[] = []
+  let group1: number[] = []
+  let group2: number[] = []
+
+  function parseGroup(input: string, groupName: 'A' | 'B'): number[] {
+    const trimmed = input.trim()
+    if (!trimmed) {
+      errors.push({ group: groupName, type: 'empty', message: `样本组${groupName}不能为空`, invalidItems: [] })
+      return []
+    }
+    const rawItems = trimmed.split(',').map(s => s.trim()).filter(s => s !== '')
+    const invalidItems: string[] = []
+    const numbers: number[] = []
+    rawItems.forEach(item => {
+      const num = parseFloat(item)
+      if (isNaN(num)) {
+        invalidItems.push(item)
+      } else if (!isFinite(num)) {
+        invalidItems.push(item)
+      } else {
+        numbers.push(num)
+      }
+    })
+    if (invalidItems.length > 0) {
+      errors.push({
+        group: groupName,
+        type: 'format',
+        message: `样本组${groupName}包含 ${invalidItems.length} 个无效数值`,
+        invalidItems
+      })
+    }
+    if (numbers.length < 2) {
+      errors.push({
+        group: groupName,
+        type: 'count',
+        message: `样本组${groupName}至少需要 2 个有效数值，当前仅有 ${numbers.length} 个`,
+        invalidItems: []
+      })
+    }
+    return numbers
+  }
+
+  group1 = parseGroup(input1, 'A')
+  group2 = parseGroup(input2, 'B')
+
+  return { valid: errors.length === 0, group1, group2, errors }
+}
+
 export const useMCStore = defineStore('mc', () => {
   const currentScenario = ref<MCScenario>(SCENARIOS[0])
   const iterations = ref(1000)
   const result = ref<MCResult | null>(null)
   const testResult = ref<HypTestResult | null>(null)
+  const testErrors = ref<ValidationError[]>([])
   const isRunning = ref(false)
 
   function runSimulation() {
@@ -118,7 +182,16 @@ export const useMCStore = defineStore('mc', () => {
     setTimeout(() => { result.value = runMC(currentScenario.value, iterations.value); isRunning.value = false }, 10)
   }
 
+  function setTestErrors(errors: ValidationError[]) {
+    testErrors.value = errors
+  }
+
+  function clearTestErrors() {
+    testErrors.value = []
+  }
+
   function runTest(g1: number[], g2: number[]) {
+    testErrors.value = []
     const n1 = g1.length, n2 = g2.length
     const m1 = g1.reduce((a, b) => a + b, 0) / n1
     const m2 = g2.reduce((a, b) => a + b, 0) / n2
@@ -148,5 +221,5 @@ export const useMCStore = defineStore('mc', () => {
     return { xAxis: Array.from({ length: bins }, (_, i) => Math.round((mn + i * bs) * 100) / 100), data: counts }
   })
 
-  return { currentScenario, iterations, result, testResult, isRunning, convergenceData, histogramData, runSimulation, runTest, setScenario }
+  return { currentScenario, iterations, result, testResult, testErrors, isRunning, convergenceData, histogramData, runSimulation, runTest, setScenario, setTestErrors, clearTestErrors }
 })
