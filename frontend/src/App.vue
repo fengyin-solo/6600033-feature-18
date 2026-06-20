@@ -48,14 +48,14 @@
           <div class="grid grid-cols-2 gap-4 mb-3">
             <div>
               <label class="text-xs text-slate-500">样本组A (逗号分隔)</label>
-              <textarea v-model="group1Input" rows="2" class="w-full mt-1 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-cyan-500 resize-none"></textarea>
+              <textarea v-model="store.group1Input" rows="2" :class="['w-full mt-1 bg-slate-900 border rounded px-2 py-1 text-xs font-mono focus:outline-none resize-none', store.group1HasError ? 'border-red-500 focus:border-red-400' : 'border-slate-600 focus:border-cyan-500']"></textarea>
             </div>
             <div>
               <label class="text-xs text-slate-500">样本组B (逗号分隔)</label>
-              <textarea v-model="group2Input" rows="2" class="w-full mt-1 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs font-mono focus:outline-none focus:border-cyan-500 resize-none"></textarea>
+              <textarea v-model="store.group2Input" rows="2" :class="['w-full mt-1 bg-slate-900 border rounded px-2 py-1 text-xs font-mono focus:outline-none resize-none', store.group2HasError ? 'border-red-500 focus:border-red-400' : 'border-slate-600 focus:border-cyan-500']"></textarea>
             </div>
           </div>
-          <button @click="runTest" class="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 rounded text-sm">执行T检验</button>
+          <button @click="store.runTestFromInput" class="px-4 py-1.5 bg-purple-600 hover:bg-purple-500 rounded text-sm">执行T检验</button>
           <div v-if="store.testErrors.length > 0" class="mt-3 space-y-2">
             <div v-for="(err, idx) in store.testErrors" :key="idx" class="bg-red-900/30 border border-red-700 rounded p-2 text-sm">
               <div class="text-red-400 font-bold">{{ err.message }}</div>
@@ -79,13 +79,11 @@
 <script setup lang="ts">
 import { ref, watch, onMounted } from 'vue'
 import * as echarts from 'echarts'
-import { useMCStore, SCENARIOS, validateAndParseSamples } from './store/mc'
+import { useMCStore, SCENARIOS } from './store/mc'
 
 const store = useMCStore()
 const convergenceRef = ref<HTMLDivElement | null>(null)
 const histogramRef = ref<HTMLDivElement | null>(null)
-const group1Input = ref('5.1,4.8,5.3,4.9,5.2,5.0,4.7,5.1,5.4,4.8')
-const group2Input = ref('4.6,4.2,4.9,4.3,4.5,4.7,4.4,4.8,4.1,4.6')
 let convChart: echarts.ECharts | null = null
 let histChart: echarts.ECharts | null = null
 
@@ -114,14 +112,6 @@ function updateCharts() {
       series: [{ type: 'bar', data: store.histogramData.data, itemStyle: { color: '#8b5cf6' } }],
       tooltip: { trigger: 'axis', backgroundColor: '#1e293b', borderColor: '#475569' }
     })
-  }
-}
-
-function runTest() {
-  const validation = validateAndParseSamples(group1Input.value, group2Input.value)
-  store.setTestErrors(validation.errors)
-  if (validation.valid) {
-    store.runTest(validation.group1, validation.group2)
   }
 }
 

@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
+
+const STORAGE_KEY = 'mc-stats-store-v1'
 
 export interface MCScenario {
   id: string
@@ -176,6 +178,36 @@ export const useMCStore = defineStore('mc', () => {
   const testResult = ref<HypTestResult | null>(null)
   const testErrors = ref<ValidationError[]>([])
   const isRunning = ref(false)
+  const group1Input = ref('5.1,4.8,5.3,4.9,5.2,5.0,4.7,5.1,5.4,4.8')
+  const group2Input = ref('4.6,4.2,4.9,4.3,4.5,4.7,4.4,4.8,4.1,4.6')
+
+  function persist() {
+    try {
+      const data = {
+        group1Input: group1Input.value,
+        group2Input: group2Input.value,
+        testResult: testResult.value,
+        testErrors: testErrors.value
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  function restore() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY)
+      if (!raw) return
+      const data = JSON.parse(raw)
+      if (typeof data.group1Input === 'string') group1Input.value = data.group1Input
+      if (typeof data.group2Input === 'string') group2Input.value = data.group2Input
+      if (data.testResult) testResult.value = data.testResult
+      if (Array.isArray(data.testErrors)) testErrors.value = data.testErrors
+    } catch (e) {
+      // ignore
+    }
+  }
 
   function runSimulation() {
     isRunning.value = true
@@ -190,18 +222,26 @@ export const useMCStore = defineStore('mc', () => {
     testErrors.value = []
   }
 
-  function runTest(g1: number[], g2: number[]) {
-    testErrors.value = []
-    const n1 = g1.length, n2 = g2.length
-    const m1 = g1.reduce((a, b) => a + b, 0) / n1
-    const m2 = g2.reduce((a, b) => a + b, 0) / n2
-    const v1 = g1.reduce((s, x) => s + (x - m1) ** 2, 0) / (n1 - 1)
-    const v2 = g2.reduce((s, x) => s + (x - m2) ** 2, 0) / (n2 - 1)
-    const se = Math.sqrt(v1 / n1 + v2 / n2)
-    const t = (m1 - m2) / se
-    const df = Math.round((v1 / n1 + v2 / n2) ** 2 / ((v1 / n1) ** 2 / (n1 - 1) + (v2 / n2) ** 2 / (n2 - 1)))
-    const pValue = 2 * (1 - Math.min(0.9999, Math.abs(t) / (Math.abs(t) + Math.sqrt(df))))
-    testResult.value = { testType: 'Welch T检验', statistic: Math.round(t * 1000) / 1000, pValue: Math.round(pValue * 10000) / 10000, significant: pValue < 0.05, alpha: 0.05, df }
+  function runTestFromInput() {
+    const validation = validateAndParseSamples(group1Input.value, group2Input.value)
+    testErrors.value = validation.errors
+    if (validation.valid) {
+      testResult.value = null
+      const g1 = validation.group1, g2 = validation.group2
+      const n1 = g1.length, n2 = g2.length
+      const m1 = g1.reduce((a, b) => a + b, 0) / n1
+      const m2 = g2.reduce((a, b) => a + b, 0) / n2
+      const v1 = g1.reduce((s, x) => s + (x - m1) ** 2, 0) / (n1 - 1)
+      const v2 = g2.reduce((s, x) => s + (x - m2) ** 2, 0) / (n2 - 1)
+      const se = Math.sqrt(v1 / n1 + v2 / n2)
+      const t = (m1 - m2) / se
+      const df = Math.round((v1 / n1 + v2 / n2) ** 2 / ((v1 / n1) ** 2 / (n1 - 1) + (v2 / n2) ** 2 / (n2 - 1)))
+      const pValue = 2 * (1 - Math.min(0.9999, Math.abs(t) / (Math.abs(t) + Math.sqrt(df))))
+      testResult.value = { testType: 'Welch T检验', statistic: Math.round(t * 1000) / 1000, pValue: Math.round(pValue * 10000) / 10000, significant: pValue < 0.05, alpha: 0.05, df }
+    } else {
+      testResult.value = null
+    }
+    persist()
   }
 
   function setScenario(s: MCScenario) { currentScenario.value = s; result.value = null }
@@ -221,5 +261,18 @@ export const useMCStore = defineStore('mc', () => {
     return { xAxis: Array.from({ length: bins }, (_, i) => Math.round((mn + i * bs) * 100) / 100), data: counts }
   })
 
-  return { currentScenario, iterations, result, testResult, testErrors, isRunning, convergenceData, histogramData, runSimulation, runTest, setScenario, setTestErrors, clearTestErrors }
+  const group1HasError = computed(() => testErrors.value.some(e => e.group === 'A'))
+  const group2HasError = computed(() => testErrors.value.some(e => e.group === 'B'))
+
+  watch([group1Input, group2Input], () => {
+    if (testErrors.value.length > 0) {
+      const validation = validateAndParseSamples(group1Input.value, group2Input.value)
+      testErrors.value = validation.errors
+    }
+    persist()
+  }, { deep: true })
+
+  restore()
+
+  return { currentScenario, iterations, result, testResult, testErrors, isRunning, group1Input, group2Input, group1HasError, group2HasError, convergenceData, histogramData, runSimulation, runTestFromInput, setScenario, setTestErrors, clearTestErrors }
 })
